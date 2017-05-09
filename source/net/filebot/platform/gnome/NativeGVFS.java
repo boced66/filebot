@@ -1,5 +1,5 @@
 
-package net.filebot.gio;
+package net.filebot.platform.gnome;
 
 import java.io.File;
 import java.net.URI;
@@ -26,6 +26,11 @@ public class NativeGVFS implements GVFS {
 			lib_gio.g_object_unref(gfile);
 			lib_gio.g_free(chars);
 		}
+	}
+
+	@Override
+	public String toString() {
+		return String.format("%s [%s]", getClass().getSimpleName(), lib_gio);
 	}
 
 }

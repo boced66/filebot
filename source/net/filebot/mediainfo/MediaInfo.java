@@ -1,6 +1,9 @@
 package net.filebot.mediainfo;
 
 import static java.nio.charset.StandardCharsets.*;
+import static java.util.stream.Collectors.*;
+import static net.filebot.Logging.*;
+import static net.filebot.util.RegularExpressions.*;
 
 import java.io.Closeable;
 import java.io.File;
@@ -11,6 +14,7 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import com.sun.jna.Platform;
 import com.sun.jna.Pointer;
@@ -146,6 +150,19 @@ public class MediaInfo implements Closeable {
 
 			if (value.length() > 0) {
 				streamInfo.put(get(streamKind, streamNumber, i, InfoKind.Name), value);
+			}
+		}
+
+		// MediaInfo does not support EXIF image metadata natively so we use the metadata-extractor library and implicitly merge that information in
+		if (streamKind == StreamKind.Image && streamNumber == 0) {
+			String path = get(StreamKind.General, 0, "CompleteName");
+			try {
+				Map<String, String> values = new ImageMetadata(new File(path)).snapshot(t -> {
+					return Stream.of(t.getDirectoryName(), t.getTagName()).flatMap(NON_WORD::splitAsStream).distinct().collect(joining("_"));
+				});
+				streamInfo.putAll(values);
+			} catch (Throwable e) {
+				debug.warning(format("%s: %s", e, path));
 			}
 		}
 

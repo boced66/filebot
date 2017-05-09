@@ -61,11 +61,12 @@ import net.filebot.ResourceManager;
 import net.filebot.Settings;
 import net.filebot.UserFiles;
 import net.filebot.format.BindingException;
+import net.filebot.format.ExpressionFileFormat;
 import net.filebot.format.ExpressionFormat;
 import net.filebot.format.MediaBindingBean;
 import net.filebot.format.SuppressedThrowables;
-import net.filebot.mac.MacAppUtilities;
 import net.filebot.media.MetaAttributes;
+import net.filebot.platform.mac.MacAppUtilities;
 import net.filebot.util.DefaultThreadFactory;
 import net.filebot.util.PreferencesList;
 import net.filebot.util.PreferencesMap.PreferencesEntry;
@@ -87,7 +88,7 @@ import net.miginfocom.swing.MigLayout;
 public class FormatDialog extends JDialog {
 
 	private boolean submit = false;
-	private ExpressionFormat format;
+	private ExpressionFileFormat format;
 
 	private Mode mode;
 	private boolean locked = false;
@@ -185,7 +186,7 @@ public class FormatDialog extends JDialog {
 		}
 	}
 
-	public FormatDialog(Window owner, Mode initMode, MediaBindingBean lockOnBinding) {
+	public FormatDialog(Window owner, Mode initMode, MediaBindingBean bindings, boolean locked) {
 		super(owner, ModalityType.DOCUMENT_MODAL);
 
 		// initialize hidden
@@ -225,9 +226,10 @@ public class FormatDialog extends JDialog {
 
 		content.add(help, "growx, wrap 25px:push");
 
-		if (lockOnBinding == null) {
+		if (bindings == null) {
 			content.add(new JButton(switchEditModeAction), "tag left");
 		}
+
 		content.add(new JButton(approveFormatAction), "tag apply");
 		content.add(new JButton(cancelAction), "tag cancel");
 
@@ -272,8 +274,15 @@ public class FormatDialog extends JDialog {
 		setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
 		setMinimumSize(new Dimension(650, 520));
 
+		// restore sample file if necessary
+		if (bindings == null) {
+			bindings = restoreSample(initMode);
+		} else if (bindings.getFileObject() == null && !locked) {
+			bindings = new MediaBindingBean(bindings.getInfoObject(), restoreSample(initMode).getFileObject());
+		}
+
 		// initialize data
-		setState(initMode, lockOnBinding != null ? lockOnBinding : restoreSample(initMode), lockOnBinding != null);
+		setState(initMode, bindings, locked);
 	}
 
 	public void setState(Mode mode, MediaBindingBean bindings, boolean locked) {
@@ -398,7 +407,7 @@ public class FormatDialog extends JDialog {
 			// bind text to preview
 			addPropertyChangeListener("sample", evt -> {
 				newSwingWorker(() -> {
-					return new ExpressionFormat(format).format(sample);
+					return new ExpressionFileFormat(format).format(sample);
 				}, s -> {
 					formatExample.setText(s);
 				}).execute();
@@ -415,17 +424,17 @@ public class FormatDialog extends JDialog {
 	protected MediaBindingBean restoreSample(Mode mode) {
 		Object info = null;
 		File media = null;
+		Map<File, ?> context = null;
 
 		try {
 			// restore sample from user preferences
-			String sample = mode.persistentSample().getValue();
-			info = MetaAttributes.toObject(sample);
-
-			if (info == null) {
-				throw new NullPointerException();
-			}
+			info = MetaAttributes.toObject(mode.persistentSample().getValue());
 		} catch (Exception e) {
-			// restore sample from application properties
+			debug.log(Level.WARNING, e, e::toString);
+		}
+
+		// restore sample from application properties if necessary
+		if (info == null) {
 			info = mode.getDefaultSampleObject();
 		}
 
@@ -434,9 +443,10 @@ public class FormatDialog extends JDialog {
 
 		if (path != null && !path.isEmpty()) {
 			media = new File(path);
+			context = singletonMap(media, info);
 		}
 
-		return new MediaBindingBean(info, media);
+		return new MediaBindingBean(info, media, context);
 	}
 
 	private ExecutorService createExecutor() {
@@ -449,7 +459,7 @@ public class FormatDialog extends JDialog {
 	private void checkFormatInBackground() {
 		try {
 			// check syntax in foreground
-			ExpressionFormat format = new ExpressionFormat(editor.getText().trim());
+			ExpressionFileFormat format = new ExpressionFileFormat(editor.getText().trim());
 
 			// activate delayed to avoid flickering when formatting takes only a couple of milliseconds
 			Timer progressIndicatorTimer = invokeLater(400, () -> progressIndicator.setVisible(true));
@@ -666,7 +676,7 @@ public class FormatDialog extends JDialog {
 	protected final Action approveFormatAction = newAction("Use Format", ResourceManager.getIcon("dialog.continue"), evt -> {
 		try {
 			// check syntax
-			format = new ExpressionFormat(editor.getText().trim());
+			format = new ExpressionFileFormat(editor.getText().trim());
 
 			if (format.getExpression().isEmpty()) {
 				throw new ScriptException("Expression is empty");

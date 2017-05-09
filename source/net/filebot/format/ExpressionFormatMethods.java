@@ -14,6 +14,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.attribute.BasicFileAttributeView;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.Temporal;
+import java.time.temporal.TemporalAmount;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -74,6 +78,10 @@ public class ExpressionFormatMethods {
 
 	public static String pad(Number self, int length) {
 		return pad(self.toString(), length, "0");
+	}
+
+	public static double round(Number self, int precision) {
+		return DefaultGroovyMethods.round(self.doubleValue(), precision);
 	}
 
 	/**
@@ -497,17 +505,13 @@ public class ExpressionFormatMethods {
 		return 0;
 	}
 
-	public static long getCreationDate(File self) {
-		try {
-			BasicFileAttributes attr = Files.getFileAttributeView(self.toPath(), BasicFileAttributeView.class).readAttributes();
-			long creationDate = attr.creationTime().toMillis();
-			if (creationDate > 0) {
-				return creationDate;
-			}
-			return attr.lastModifiedTime().toMillis();
-		} catch (IOException e) {
-			throw new RuntimeException(e);
+	public static long getCreationDate(File self) throws IOException {
+		BasicFileAttributes attr = Files.getFileAttributeView(self.toPath(), BasicFileAttributeView.class).readAttributes();
+		long creationDate = attr.creationTime().toMillis();
+		if (creationDate > 0) {
+			return creationDate;
 		}
+		return attr.lastModifiedTime().toMillis();
 	}
 
 	public static File toFile(String self) {
@@ -552,19 +556,27 @@ public class ExpressionFormatMethods {
 		return Stream.of(DefaultGroovyMethods.min(self), DefaultGroovyMethods.max(self)).filter(Objects::nonNull).distinct().collect(toList());
 	}
 
+	public static String format(Temporal self, String pattern) {
+		return DateTimeFormatter.ofPattern(pattern, Locale.ENGLISH).format(self);
+	}
+
+	public static String format(TemporalAmount self, String pattern) {
+		return DateTimeFormatter.ofPattern(pattern, Locale.ENGLISH).format(LocalTime.MIDNIGHT.plus(self));
+	}
+
 	/**
 	 * Episode utilities (EXPERIMENTAL)
 	 */
 	public static EpisodeInfo getInfo(Episode self) throws Exception {
 		if (TheTVDB.getIdentifier().equals(self.getSeriesInfo().getDatabase())) {
-			return TheTVDBv2.getEpisodeInfo(self.getId(), Locale.ENGLISH);
+			return TheTVDB.getEpisodeInfo(self.getId(), Locale.ENGLISH);
 		}
 		return null;
 	}
 
 	public static List<String> getActors(SeriesInfo self) throws Exception {
 		if (TheTVDB.getIdentifier().equals(self.getDatabase())) {
-			return TheTVDBv2.getActors(self.getId(), Locale.ENGLISH).stream().map(Person::getName).collect(toList());
+			return TheTVDB.getActors(self.getId(), Locale.ENGLISH).stream().map(Person::getName).collect(toList());
 		}
 		return null;
 	}

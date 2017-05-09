@@ -40,7 +40,6 @@ import net.filebot.web.TMDbClient;
 import net.filebot.web.TMDbTVClient;
 import net.filebot.web.TVMazeClient;
 import net.filebot.web.TheTVDBClient;
-import net.filebot.web.TheTVDBClientV1;
 import net.filebot.web.VideoHashSubtitleService;
 
 /**
@@ -60,9 +59,6 @@ public final class WebServices {
 	public static final TheTVDBClientWithLocalSearch TheTVDB = new TheTVDBClientWithLocalSearch(getApiKey("thetvdb"));
 	public static final TMDbTVClient TheMovieDB_TV = new TMDbTVClient(TheMovieDB);
 
-	// TheTVDB v2 implementation used for internal purposes and testing
-	public static final TheTVDBClient TheTVDBv2 = new TheTVDBClient(getApiKey("thetvdb"));
-
 	// subtitle sources
 	public static final OpenSubtitlesClient OpenSubtitles = new OpenSubtitlesClientWithLocalSearch(getApiKey("opensubtitles"), getApplicationVersion());
 	public static final ShooterSubtitles Shooter = new ShooterSubtitles();
@@ -74,7 +70,7 @@ public final class WebServices {
 	public static final ID3Lookup MediaInfoID3 = new ID3Lookup();
 
 	public static Datasource[] getServices() {
-		return new Datasource[] { TheMovieDB, OMDb, TheTVDB, AniDB, TheMovieDB_TV, TVmaze, AcoustID, MediaInfoID3, XattrMetaData, OpenSubtitles, Shooter, TheTVDBv2, FanartTV };
+		return new Datasource[] { TheMovieDB, OMDb, TheTVDB, AniDB, TheMovieDB_TV, TVmaze, AcoustID, MediaInfoID3, XattrMetaData, OpenSubtitles, Shooter, FanartTV };
 	}
 
 	public static MovieIdentificationService[] getMovieIdentificationServices() {
@@ -94,12 +90,12 @@ public final class WebServices {
 	}
 
 	public static VideoHashSubtitleService[] getVideoHashSubtitleServices(Locale locale) {
-		// special support for 射手网 for Chinese language subtitles
-		if (locale.equals(Locale.CHINESE)) {
-			return new VideoHashSubtitleService[] { OpenSubtitles, Shooter };
+		switch (locale.getLanguage()) {
+		case "zh":
+			return new VideoHashSubtitleService[] { OpenSubtitles, Shooter }; // special support for 射手网 for Chinese language subtitles
+		default:
+			return new VideoHashSubtitleService[] { OpenSubtitles };
 		}
-
-		return new VideoHashSubtitleService[] { OpenSubtitles };
 	}
 
 	public static Datasource getService(String name) {
@@ -126,16 +122,14 @@ public final class WebServices {
 
 	public static final ExecutorService requestThreadPool = Executors.newCachedThreadPool();
 
-	public static class TheTVDBClientWithLocalSearch extends TheTVDBClientV1 {
+	public static class TheTVDBClientWithLocalSearch extends TheTVDBClient {
 
 		public TheTVDBClientWithLocalSearch(String apikey) {
 			super(apikey);
 		}
 
 		// local TheTVDB search index
-		private final Resource<LocalSearch<SearchResult>> localIndex = Resource.lazy(() -> {
-			return new LocalSearch<SearchResult>(releaseInfo.getTheTVDBIndex(), SearchResult::getEffectiveNames);
-		}).memoize();
+		private final Resource<LocalSearch<SearchResult>> localIndex = Resource.lazy(() -> new LocalSearch<SearchResult>(releaseInfo.getTheTVDBIndex(), SearchResult::getEffectiveNames));
 
 		private SearchResult merge(SearchResult prime, List<SearchResult> group) {
 			int id = prime.getId();
@@ -177,9 +171,7 @@ public final class WebServices {
 		}
 
 		// local OpenSubtitles search index
-		private final Resource<LocalSearch<SubtitleSearchResult>> localIndex = Resource.lazy(() -> {
-			return new LocalSearch<SubtitleSearchResult>(releaseInfo.getOpenSubtitlesIndex(), SearchResult::getEffectiveNames);
-		}).memoize();
+		private final Resource<LocalSearch<SubtitleSearchResult>> localIndex = Resource.lazy(() -> new LocalSearch<SubtitleSearchResult>(releaseInfo.getOpenSubtitlesIndex(), SearchResult::getEffectiveNames));
 
 		@Override
 		public List<SubtitleSearchResult> search(final String query) throws Exception {

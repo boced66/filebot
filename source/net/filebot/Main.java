@@ -1,11 +1,9 @@
 package net.filebot;
 
 import static java.awt.GraphicsEnvironment.*;
-import static java.util.Arrays.*;
 import static java.util.stream.Collectors.*;
 import static net.filebot.Logging.*;
 import static net.filebot.Settings.*;
-import static net.filebot.util.ExceptionUtilities.*;
 import static net.filebot.util.FileUtilities.*;
 import static net.filebot.util.XPathUtilities.*;
 import static net.filebot.util.ui.SwingUI.*;
@@ -36,9 +34,8 @@ import org.w3c.dom.Document;
 
 import net.filebot.cli.ArgumentBean;
 import net.filebot.cli.ArgumentProcessor;
-import net.filebot.cli.CmdlineException;
 import net.filebot.format.ExpressionFormat;
-import net.filebot.mac.MacAppUtilities;
+import net.filebot.platform.mac.MacAppUtilities;
 import net.filebot.ui.FileBotMenuBar;
 import net.filebot.ui.GettingStartedStage;
 import net.filebot.ui.MainFrame;
@@ -49,7 +46,6 @@ import net.filebot.ui.SupportDialog;
 import net.filebot.ui.transfer.FileTransferable;
 import net.filebot.util.PreferencesMap.PreferencesEntry;
 import net.filebot.util.ui.SwingEventBus;
-import net.filebot.win.WinAppUtilities;
 import net.miginfocom.swing.MigLayout;
 
 public class Main {
@@ -71,12 +67,6 @@ public class Main {
 			}
 
 			if (args.clearCache() || args.clearUserData()) {
-				// clear cache must be called manually
-				if (System.console() == null) {
-					log.severe("`filebot -clear-cache` has been disabled due to abuse.");
-					System.exit(1);
-				}
-
 				// clear persistent user preferences
 				if (args.clearUserData()) {
 					log.info("Reset preferences");
@@ -85,6 +75,12 @@ public class Main {
 
 				// clear caches
 				if (args.clearCache()) {
+					// clear cache must be called manually
+					if (System.console() == null) {
+						log.severe("`filebot -clear-cache` has been disabled due to abuse.");
+						System.exit(1);
+					}
+
 					log.info("Clear cache");
 					for (File folder : getChildren(ApplicationFolder.Cache.get(), FOLDERS)) {
 						log.fine("* Delete " + folder);
@@ -134,7 +130,7 @@ public class Main {
 			System.exit(1);
 		} catch (Throwable e) {
 			// unexpected error => dump stack
-			debug.log(Level.SEVERE, "Error during startup: " + getRootCause(e), e);
+			debug.severe(cause("Error during startup", e));
 			System.exit(1);
 		}
 	}
@@ -181,16 +177,7 @@ public class Main {
 		}
 
 		// start multi panel or single panel frame
-		PanelBuilder[] panels = PanelBuilder.defaultSequence();
-
-		if (args.mode != null) {
-			panels = stream(panels).filter(p -> p.getName().matches(args.mode)).toArray(PanelBuilder[]::new); // only selected panels
-
-			if (panels.length == 0) {
-				throw new CmdlineException("Illegal mode: " + args.mode);
-			}
-		}
-
+		PanelBuilder[] panels = args.getPanelBuilders();
 		JFrame frame = panels.length > 1 ? new MainFrame(panels) : new SinglePanelFrame(panels[0]);
 
 		try {
@@ -221,9 +208,6 @@ public class Main {
 			frame.setIconImages(ResourceManager.getApplicationIcons());
 		} else if (isWindowsApp()) {
 			// Windows specific configuration
-			if (!isAppStore()) {
-				WinAppUtilities.setAppUserModelID(Settings.getApplicationUserModelID()); // support Windows 7 taskbar behaviours (not necessary for Windows 10 apps)
-			}
 			frame.setIconImages(ResourceManager.getApplicationIcons());
 		} else {
 			// generic Linux/FreeBSD/Solaris configuration

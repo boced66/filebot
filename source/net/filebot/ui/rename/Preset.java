@@ -11,13 +11,15 @@ import java.util.List;
 import java.util.logging.Level;
 import java.util.stream.Stream;
 
+import javax.swing.Icon;
+
 import net.filebot.CachedResource.Transform;
 import net.filebot.Language;
 import net.filebot.StandardRenameAction;
 import net.filebot.format.ExpressionFileFilter;
+import net.filebot.format.ExpressionFileFormat;
 import net.filebot.format.ExpressionFilter;
 import net.filebot.format.ExpressionFormat;
-import net.filebot.media.XattrMetaInfoProvider;
 import net.filebot.web.Datasource;
 import net.filebot.web.EpisodeListProvider;
 import net.filebot.web.MovieIdentificationService;
@@ -60,8 +62,8 @@ public class Preset {
 		return getInputFolder() == null ? null : getValue(includes, expression -> new ExpressionFileFilter(expression));
 	}
 
-	public ExpressionFormat getFormat() {
-		return getValue(format, ExpressionFormat::new);
+	public ExpressionFileFormat getFormat() {
+		return getValue(format, ExpressionFileFormat::new);
 	}
 
 	public String getMatchMode() {
@@ -82,6 +84,10 @@ public class Preset {
 
 	public Datasource getDatasource() {
 		return getValue(database, id -> getService(id, getSupportedServices()));
+	}
+
+	public Icon getIcon() {
+		return getValue(database, id -> getService(id, getSupportedServices()).getIcon());
 	}
 
 	private <T> T getValue(String s, Transform<String, T> t) {
@@ -119,11 +125,12 @@ public class Preset {
 			return new MusicMatcher((MusicIdentificationService) db);
 		}
 
-		if (db instanceof XattrMetaInfoProvider) {
-			return XATTR_FILE_MATCHER;
+		// PhotoFileMatcher / XattrFileMatcher / PlainFileMatcher
+		if (db instanceof AutoCompleteMatcher) {
+			return (AutoCompleteMatcher) db;
 		}
 
-		return PLAIN_FILE_MATCHER; // default to plain file matcher
+		throw new IllegalStateException("Illegal datasource: " + db);
 	}
 
 	@Override
@@ -131,13 +138,12 @@ public class Preset {
 		return name;
 	}
 
-	public static final XattrFileMatcher XATTR_FILE_MATCHER = new XattrFileMatcher();
-	public static final PlainFileMatcher PLAIN_FILE_MATCHER = new PlainFileMatcher();
-
 	public static Datasource[] getSupportedServices() {
-		Stream<Datasource> services = Stream.of(getEpisodeListProviders(), getMovieIdentificationServices(), getMusicIdentificationServices()).flatMap(Stream::of);
-		services = Stream.concat(services, Stream.of(XATTR_FILE_MATCHER, PLAIN_FILE_MATCHER));
-		return services.toArray(Datasource[]::new);
+		return Stream.of(getEpisodeListProviders(), getMovieIdentificationServices(), getMusicIdentificationServices(), getGenericFileMatcherServices()).flatMap(Stream::of).toArray(Datasource[]::new);
+	}
+
+	public static Datasource[] getGenericFileMatcherServices() {
+		return new Datasource[] { PhotoFileMatcher.INSTANCE, XattrFileMatcher.INSTANCE, PlainFileMatcher.INSTANCE };
 	}
 
 	public static StandardRenameAction[] getSupportedActions() {

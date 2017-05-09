@@ -245,7 +245,20 @@ public final class FileUtilities {
 			detector.setText(in);
 			CharsetMatch match = detector.detect();
 			if (match != null) {
-				return match.getReader();
+				Reader reader = match.getReader();
+
+				// reader may be null if detected character encoding is not supported
+				if (reader != null) {
+					return reader;
+				}
+
+				// ISO-8859-8-I is not supported, but ISO-8859-8 uses the same code points so we can use that instead
+				switch (match.getName()) {
+				case "ISO-8859-8-I":
+					return new InputStreamReader(in, Charset.forName("ISO-8859-8"));
+				default:
+					debug.warning("Unsupported charset: " + match.getName());
+				}
 			}
 		}
 
@@ -259,6 +272,27 @@ public final class FileUtilities {
 
 	public static boolean equalsCaseSensitive(File a, File b) {
 		return a.getPath().equals(b.getPath());
+	}
+
+	public static boolean equalsFileContent(File a, File b) {
+		// must have the same file size
+		if (a.length() != b.length()) {
+			return false;
+		}
+
+		// must not be a folder
+		if (a.isDirectory() || b.isDirectory()) {
+			return false;
+		}
+
+		// must be equal byte by byte
+		try {
+			return FileUtils.contentEquals(a, b);
+		} catch (Exception e) {
+			log.warning(cause(e));
+		}
+
+		return false;
 	}
 
 	/**
@@ -629,10 +663,11 @@ public final class FileUtilities {
 	}
 
 	public static String normalizePathSeparators(String path) {
-		// special handling for UNC paths
+		// special handling for UNC paths (e.g. \\server\share\path)
 		if (path.startsWith(UNC_PREFIX)) {
-			return UNC_PREFIX + replacePathSeparators(path.substring(UNC_PREFIX.length()), "/");
+			return UNC_PREFIX + normalizePathSeparators(path.substring(UNC_PREFIX.length()));
 		}
+
 		return replacePathSeparators(path, "/");
 	}
 

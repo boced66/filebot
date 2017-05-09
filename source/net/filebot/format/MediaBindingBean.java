@@ -22,6 +22,7 @@ import java.io.File;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -51,6 +52,7 @@ import net.filebot.Settings;
 import net.filebot.hash.HashType;
 import net.filebot.media.MetaAttributes;
 import net.filebot.media.NamingStandard;
+import net.filebot.mediainfo.ImageMetadata;
 import net.filebot.mediainfo.MediaInfo;
 import net.filebot.mediainfo.MediaInfo.StreamKind;
 import net.filebot.mediainfo.MediaInfoException;
@@ -124,10 +126,8 @@ public class MediaBindingBean {
 			return getEpisode().getSeriesInfo().getStartDate().getYear();
 		if (infoObject instanceof Movie)
 			return getMovie().getYear();
-		if (infoObject instanceof AudioTrack)
-			return getMusic().getAlbumReleaseDate().getYear();
 
-		return null;
+		return getReleaseDate().getYear();
 	}
 
 	@Define("ny")
@@ -204,7 +204,27 @@ public class MediaBindingBean {
 		if (infoObject instanceof AudioTrack)
 			return getMusic().getAlbumReleaseDate();
 		if (infoObject instanceof File)
-			return new SimpleDate(getCreationDate(((File) infoObject)));
+			return new SimpleDate(getTimeStamp());
+
+		return null;
+	}
+
+	@Define("dt")
+	public ZonedDateTime getTimeStamp() {
+		File f = getMediaFile();
+
+		// try EXIF Date-Taken for image files or File Last-Modified for generic files
+		try {
+			return new ImageMetadata(f).getDateTaken().get();
+		} catch (Exception e) {
+			// ignore and default to file creation date
+		}
+
+		try {
+			return Instant.ofEpochMilli(getCreationDate(f)).atZone(ZoneOffset.systemDefault());
+		} catch (Exception e) {
+			debug.warning(e::toString);
+		}
 
 		return null;
 	}
@@ -407,20 +427,39 @@ public class MediaBindingBean {
 		return (float) dim.get(0) / dim.get(1) > 1.37f ? "WS" : null;
 	}
 
-	@Define("sdhd")
+	@Define("hd")
 	public String getVideoDefinitionCategory() {
 		List<Integer> dim = getDimension();
 
-		// SD (less than 720 lines) or HD (more than 720 lines)
-		return dim.get(0) >= 1280 || dim.get(1) >= 720 ? "HD" : "SD";
+		// UHD
+		if (dim.get(0) >= 3840 || dim.get(1) >= 2160)
+			return "UHD";
+
+		// HD
+		if (dim.get(0) >= 1280 || dim.get(1) >= 720)
+			return "HD";
+
+		// SD
+		return "SD";
 	}
 
 	@Define("dim")
 	public List<Integer> getDimension() {
-		String width = getMediaInfo(StreamKind.Video, 0, "Width");
-		String height = getMediaInfo(StreamKind.Video, 0, "Height");
+		// collect value from Video Stream 0 or Image Stream 0
+		return Stream.of(StreamKind.Video, StreamKind.Image).map(k -> {
+			// collect Width and Height as Integer List
+			return Stream.of("Width", "Height").map(p -> getMediaInfo().get(k, 0, p)).filter(s -> s.length() > 0).map(Integer::new).collect(toList());
+		}).filter(d -> d.size() == 2).findFirst().orElse(null);
+	}
 
-		return asList(Integer.parseInt(width), Integer.parseInt(height));
+	@Define("width")
+	public Integer getWidth() {
+		return getDimension().get(0);
+	}
+
+	@Define("height")
+	public Integer getHeight() {
+		return getDimension().get(1);
 	}
 
 	@Define("original")
@@ -465,7 +504,7 @@ public class MediaBindingBean {
 
 		// calculate checksum from file
 		Cache cache = Cache.getCache("crc32", CacheType.Ephemeral);
-		return (String) cache.computeIfAbsent(inferredMediaFile.getCanonicalPath(), it -> crc32(inferredMediaFile));
+		return (String) cache.computeIfAbsent(inferredMediaFile, it -> crc32(inferredMediaFile));
 	}
 
 	@Define("fn")
@@ -717,7 +756,7 @@ public class MediaBindingBean {
 	@Define("az")
 	public String getSortInitial() {
 		try {
-			return sortInitial(getCollection().toString());
+			return sortInitial(getCollection());
 		} catch (Exception e) {
 			return sortInitial(getName());
 		}
@@ -770,7 +809,12 @@ public class MediaBindingBean {
 
 	@Define("kbps")
 	public String getKiloBytesPerSecond() {
-		return String.format("%d kbps", getOverallBitRate() / 1000);
+		return String.format("%.0f kbps", getOverallBitRate() / 1e3f);
+	}
+
+	@Define("mbps")
+	public String getMegaBytesPerSecond() {
+		return String.format("%.1f Mbps", getOverallBitRate() / 1e6f);
 	}
 
 	@Define("khz")
@@ -779,18 +823,24 @@ public class MediaBindingBean {
 	}
 
 	@Define("duration")
-	public Long getDuration() {
-		return new Double(getMediaInfo(StreamKind.General, 0, "Duration")).longValue();
+	public Duration getDuration() {
+		long d = new Double(getMediaInfo(StreamKind.General, 0, "Duration")).longValue();
+		return Duration.ofMillis(d);
 	}
 
 	@Define("seconds")
-	public Integer getSeconds() {
-		return (int) (getDuration() / 1000);
+	public long getSeconds() {
+		return getDuration().getSeconds();
 	}
 
 	@Define("minutes")
-	public Integer getDurationInMinutes() {
-		return (int) (getDuration() / 60000);
+	public long getMinutes() {
+		return getDuration().toMinutes();
+	}
+
+	@Define("hours")
+	public String getHours() {
+		return ExpressionFormatMethods.format(getDuration(), "H:mm");
 	}
 
 	@Define("media")
@@ -826,6 +876,21 @@ public class MediaBindingBean {
 	@Define("chapters")
 	public List<AssociativeScriptObject> getChaptersInfoList() {
 		return createMediaInfoBindings(StreamKind.Chapters);
+	}
+
+	@Define("exif")
+	public AssociativeScriptObject getImageMetadata() throws Exception {
+		return new AssociativeScriptObject(new ImageMetadata(getMediaFile()).snapshot());
+	}
+
+	@Define("camera")
+	public AssociativeEnumObject getCamera() throws Exception {
+		return new ImageMetadata(getMediaFile()).getCameraModel().map(AssociativeEnumObject::new).orElse(null);
+	}
+
+	@Define("location")
+	public AssociativeEnumObject getLocation() throws Exception {
+		return new ImageMetadata(getMediaFile()).getLocationTaken().map(AssociativeEnumObject::new).orElse(null);
 	}
 
 	@Define("artist")
@@ -914,18 +979,24 @@ public class MediaBindingBean {
 	}
 
 	@Define("bytes")
-	public Long getFileSize() {
+	public long getFileSize() {
+		// sum size of all files
+		if (getMediaFile().isDirectory()) {
+			return listFiles(getMediaFile(), FILES).stream().mapToLong(File::length).sum();
+		}
+
+		// size of inferred media file (e.g. video file size for subtitle file)
 		return getInferredMediaFile().length();
 	}
 
 	@Define("megabytes")
 	public String getFileSizeInMegaBytes() {
-		return String.format("%.0f", getFileSize() / Math.pow(1000, 2));
+		return String.format("%.0f", getFileSize() / 1e6);
 	}
 
 	@Define("gigabytes")
 	public String getFileSizeInGigaBytes() {
-		return String.format("%.1f", getFileSize() / Math.pow(1000, 3));
+		return String.format("%.1f", getFileSize() / 1e9);
 	}
 
 	@Define("encodedDate")
@@ -1008,13 +1079,15 @@ public class MediaBindingBean {
 	}
 
 	public File getInferredMediaFile() {
-		if (getMediaFile().isDirectory()) {
+		File file = getMediaFile();
+
+		if (file.isDirectory()) {
 			// just select the first video file in the folder as media sample
-			List<File> videos = listFiles(getMediaFile(), VIDEO_FILES, CASE_INSENSITIVE_PATH_ORDER);
+			List<File> videos = listFiles(file, VIDEO_FILES, CASE_INSENSITIVE_PATH_ORDER);
 			if (videos.size() > 0) {
 				return videos.get(0);
 			}
-		} else if (SUBTITLE_FILES.accept(getMediaFile()) || ((infoObject instanceof Episode || infoObject instanceof Movie) && !VIDEO_FILES.accept(getMediaFile()))) {
+		} else if ((SUBTITLE_FILES.accept(file) || IMAGE_FILES.accept(file)) || ((infoObject instanceof Episode || infoObject instanceof Movie) && !VIDEO_FILES.accept(file))) {
 			// prefer equal match from current context if possible
 			if (context != null) {
 				for (Entry<File, ?> it : context.entrySet()) {
@@ -1025,8 +1098,8 @@ public class MediaBindingBean {
 			}
 
 			// file is a subtitle, or nfo, etc
-			String baseName = stripReleaseInfo(FileUtilities.getName(getMediaFile())).toLowerCase();
-			List<File> videos = getChildren(getMediaFile().getParentFile(), VIDEO_FILES);
+			String baseName = stripReleaseInfo(FileUtilities.getName(file)).toLowerCase();
+			List<File> videos = getChildren(file.getParentFile(), VIDEO_FILES);
 
 			// find corresponding movie file
 			for (File movieFile : videos) {
@@ -1037,12 +1110,12 @@ public class MediaBindingBean {
 
 			// still no good match found -> just take the most probable video from the same folder
 			if (videos.size() > 0) {
-				sort(videos, SimilarityComparator.compareTo(FileUtilities.getName(getMediaFile()), FileUtilities::getName));
+				sort(videos, SimilarityComparator.compareTo(FileUtilities.getName(file), FileUtilities::getName));
 				return videos.get(0);
 			}
 		}
 
-		return getMediaFile();
+		return file;
 	}
 
 	public Episode getSeasonEpisode() {

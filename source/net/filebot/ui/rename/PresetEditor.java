@@ -37,10 +37,10 @@ import net.filebot.ResourceManager;
 import net.filebot.StandardRenameAction;
 import net.filebot.UserFiles;
 import net.filebot.WebServices;
+import net.filebot.format.ExpressionFileFormat;
 import net.filebot.format.ExpressionFilter;
-import net.filebot.format.ExpressionFormat;
 import net.filebot.format.MediaBindingBean;
-import net.filebot.mac.MacAppUtilities;
+import net.filebot.platform.mac.MacAppUtilities;
 import net.filebot.ui.HeaderPanel;
 import net.filebot.util.FileUtilities.ExtensionFileFilter;
 import net.filebot.web.Datasource;
@@ -181,7 +181,7 @@ public class PresetEditor extends JDialog {
 		String name = presetNameHeader.getTitleLabel().getText();
 		File path = inheritRadio.isSelected() ? null : new File(pathInput.getText());
 		ExpressionFilter includes = inheritRadio.isSelected() ? null : new ExpressionFilter(filterEditor.getText());
-		ExpressionFormat format = formatEditor.getText().trim().isEmpty() ? null : new ExpressionFormat(formatEditor.getText());
+		ExpressionFileFormat format = formatEditor.getText().trim().isEmpty() ? null : new ExpressionFileFormat(formatEditor.getText());
 		Datasource database = ((Datasource) providerCombo.getSelectedItem());
 		SortOrder sortOrder = sortOrderCombo.isEnabled() ? ((SortOrder) sortOrderCombo.getSelectedItem()) : null;
 		String matchMode = matchModeCombo.isEnabled() ? (String) matchModeCombo.getSelectedItem() : null;
@@ -314,7 +314,7 @@ public class PresetEditor extends JDialog {
 			sample = file = files.get(0);
 		}
 
-		FormatDialog dialog = new FormatDialog(getWindow(evt.getSource()), mode, new MediaBindingBean(sample, file, singletonMap(file, sample)));
+		FormatDialog dialog = new FormatDialog(getWindow(evt.getSource()), mode, new MediaBindingBean(sample, file, singletonMap(file, sample)), false);
 		dialog.setFormatCode(formatEditor.getText());
 		dialog.setLocation(getOffsetLocation(dialog.getOwner()));
 		dialog.setVisible(true);

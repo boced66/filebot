@@ -104,6 +104,10 @@ public class ScriptShellMethods {
 		return ARCHIVE_FILES.accept(self);
 	}
 
+	public static boolean isImage(File self) {
+		return IMAGE_FILES.accept(self);
+	}
+
 	public static boolean isDisk(File self) {
 		// check disk folder
 		if (self.isDirectory() && MediaDetection.isDiskFolder(self)) {
@@ -267,10 +271,10 @@ public class ScriptShellMethods {
 		return FileUtilities.copyAs(self, new File(destination, self.getName()));
 	}
 
-	public static void createFileIfNotExists(File self) throws IOException {
+	public static void createIfNotExists(File self) throws IOException {
 		if (!self.isFile()) {
 			// create parent folder structure if necessary & create file
-			Files.createDirectories(self.getParentFile().toPath());
+			Files.createDirectories(self.toPath().getParent());
 			Files.createFile(self.toPath());
 		}
 	}

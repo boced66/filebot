@@ -2,7 +2,6 @@ package net.filebot.media;
 
 import static net.filebot.Logging.*;
 import static net.filebot.Settings.*;
-import static net.filebot.util.ExceptionUtilities.*;
 
 import java.io.File;
 import java.util.Locale;
@@ -68,15 +67,27 @@ public class XattrMetaInfo {
 		}
 
 		try {
-			return cache.computeIfAbsent(file, element -> compute.apply(xattr(file)));
+			return cache.computeIfAbsent(file, element -> compute.apply(xattr(file))); // read only
 		} catch (Throwable e) {
-			debug.warning("Failed to read xattr: " + getRootCauseMessage(e));
+			debug.warning(cause("Failed to read xattr", e));
 		}
 		return null;
 	}
 
-	private MetaAttributes xattr(File file) throws Exception {
-		return new MetaAttributes(file);
+	private File writable(File f) throws Exception {
+		// make file writable if necessary
+		if (!f.canWrite()) {
+			if (f.setWritable(true)) {
+				debug.fine(message("Grant write permissions", f));
+			} else {
+				debug.warning(message("Failed to grant write permissions", f));
+			}
+		}
+		return f;
+	}
+
+	private MetaAttributes xattr(File f) throws Exception {
+		return new MetaAttributes(f);
 	}
 
 	public synchronized void setMetaInfo(File file, Object model, String original) {
@@ -86,7 +97,7 @@ public class XattrMetaInfo {
 		}
 
 		// set creation date to episode / movie release date
-		Resource<MetaAttributes> xattr = Resource.lazy(() -> xattr(file));
+		Resource<MetaAttributes> xattr = Resource.lazy(() -> xattr(writable(file)));
 
 		if (useCreationDate) {
 			try {
@@ -95,7 +106,7 @@ public class XattrMetaInfo {
 					xattr.get().setCreationDate(t);
 				}
 			} catch (Throwable e) {
-				debug.warning("Failed to set creation date: " + getRootCauseMessage(e));
+				debug.warning(cause("Failed to set creation date", e));
 			}
 		}
 
@@ -117,7 +128,7 @@ public class XattrMetaInfo {
 				}
 			}
 		} catch (Throwable e) {
-			debug.warning("Failed to set xattr: " + getRootCauseMessage(e));
+			debug.warning(cause("Failed to set xattr", e));
 		}
 	}
 
@@ -128,9 +139,9 @@ public class XattrMetaInfo {
 
 		if (useExtendedFileAttributes) {
 			try {
-				xattr(file).clear();
+				xattr(writable(file)).clear();
 			} catch (Throwable e) {
-				debug.warning("Failed to clear xattr: " + getRootCauseMessage(e));
+				debug.warning(cause("Failed to clear xattr", e));
 			}
 		}
 	}

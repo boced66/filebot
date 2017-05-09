@@ -1,6 +1,8 @@
 package net.filebot;
 
 import static java.nio.channels.Channels.*;
+import static java.util.Arrays.*;
+import static java.util.stream.Collectors.*;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -10,6 +12,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.channels.FileChannel;
 import java.nio.file.StandardOpenOption;
+import java.util.Objects;
 import java.util.function.Supplier;
 import java.util.logging.Formatter;
 import java.util.logging.Handler;
@@ -96,13 +99,30 @@ public final class Logging {
 		};
 	}
 
+	public static Supplier<String> cause(String m, Throwable t) {
+		return () -> getMessage(m, t);
+	}
+
 	public static Supplier<String> cause(Throwable t) {
-		return () -> {
-			StringBuilder s = new StringBuilder();
-			s.append(t.getClass().getSimpleName()).append(": ");
-			s.append(t.getMessage());
-			return s.toString();
-		};
+		return () -> getMessage(null, t);
+	}
+
+	public static Supplier<String> message(Object... elements) {
+		return () -> getMessage(elements);
+	}
+
+	private static String getMessage(String m, Throwable t) {
+		// try to unravel stacked exceptions
+		if (t instanceof RuntimeException && t.getCause() != null) {
+			return getMessage(m, t.getCause());
+		}
+
+		// e.g. Failed to create file: AccessDeniedException: /path/to/file
+		return getMessage(m, t.getClass().getSimpleName(), t.getMessage());
+	}
+
+	private static String getMessage(Object... elements) {
+		return stream(elements).filter(Objects::nonNull).map(Objects::toString).collect(joining(": "));
 	}
 
 	public static class ConsoleFormatter extends Formatter {

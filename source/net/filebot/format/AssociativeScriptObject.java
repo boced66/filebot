@@ -1,61 +1,52 @@
 
 package net.filebot.format;
 
+import static net.filebot.util.RegularExpressions.*;
 
 import java.util.AbstractMap;
 import java.util.AbstractSet;
-import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.TreeSet;
 
 import groovy.lang.GroovyObjectSupport;
-
 
 public class AssociativeScriptObject extends GroovyObjectSupport implements Iterable<Entry<Object, Object>> {
 
 	private final Map<Object, Object> properties;
 
-
 	public AssociativeScriptObject(Map<?, ?> properties) {
 		this.properties = new LenientLookup(properties);
 	}
 
-
-	/**
-	 * Get the property with the given name.
-	 *
-	 * @param name
-	 *            the property name
-	 * @param start
-	 *            the object where the lookup began
-	 */
 	@Override
 	public Object getProperty(String name) {
-		return properties.get(name);
-	}
+		Object value = properties.get(name);
 
+		if (value != null) {
+			return value;
+		}
+
+		return super.getProperty(name);
+	}
 
 	@Override
 	public void setProperty(String name, Object value) {
-		// ignore, object is immutable
+		throw new UnsupportedOperationException();
 	}
-
 
 	@Override
 	public Iterator<Entry<Object, Object>> iterator() {
 		return properties.entrySet().iterator();
 	}
 
-
 	@Override
 	public String toString() {
 		// all the properties in alphabetic order
-		return new TreeSet<Object>(properties.keySet()).toString();
+		return properties.keySet().toString();
 	}
-
 
 	/**
 	 * Map allowing look-up of values by a fault-tolerant key as specified by the defining key.
@@ -63,8 +54,7 @@ public class AssociativeScriptObject extends GroovyObjectSupport implements Iter
 	 */
 	private static class LenientLookup extends AbstractMap<Object, Object> {
 
-		private final Map<String, Entry<?, ?>> lookup = new HashMap<String, Entry<?, ?>>();
-
+		private final Map<String, Entry<?, ?>> lookup = new LinkedHashMap<String, Entry<?, ?>>();
 
 		public LenientLookup(Map<?, ?> source) {
 			// populate lookup map
@@ -73,18 +63,15 @@ public class AssociativeScriptObject extends GroovyObjectSupport implements Iter
 			}
 		}
 
-
 		protected String definingKey(Object key) {
 			// letters and digits are defining, everything else will be ignored
-			return key.toString().replaceAll("[^\\p{Alnum}]", "").toLowerCase();
+			return NON_WORD.matcher(key.toString()).replaceAll("").toLowerCase();
 		}
-
 
 		@Override
 		public boolean containsKey(Object key) {
 			return lookup.containsKey(definingKey(key));
 		}
-
 
 		@Override
 		public Object get(Object key) {
@@ -96,7 +83,6 @@ public class AssociativeScriptObject extends GroovyObjectSupport implements Iter
 			return null;
 		}
 
-
 		@Override
 		public Set<Entry<Object, Object>> entrySet() {
 			return new AbstractSet<Entry<Object, Object>>() {
@@ -105,7 +91,6 @@ public class AssociativeScriptObject extends GroovyObjectSupport implements Iter
 				public Iterator<Entry<Object, Object>> iterator() {
 					return (Iterator) lookup.values().iterator();
 				}
-
 
 				@Override
 				public int size() {

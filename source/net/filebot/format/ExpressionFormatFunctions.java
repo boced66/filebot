@@ -7,6 +7,7 @@ import static net.filebot.util.RegularExpressions.*;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -14,10 +15,12 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import com.sun.jna.Platform;
+
 import groovy.lang.Closure;
 import groovy.util.XmlSlurper;
 import net.filebot.ApplicationFolder;
-import net.filebot.mac.MacAppUtilities;
+import net.filebot.platform.mac.MacAppUtilities;
 import net.filebot.util.FileUtilities;
 
 /**
@@ -25,21 +28,38 @@ import net.filebot.util.FileUtilities;
  */
 public class ExpressionFormatFunctions {
 
-	/**
+	/*
 	 * General helpers and utilities
 	 */
+
 	public static Object call(Object object) {
-		if (object instanceof Closure<?>) {
+		if (object instanceof Closure) {
 			try {
-				return ((Closure<?>) object).call();
+				return call(((Closure) object).call());
 			} catch (Exception e) {
 				return null;
 			}
 		}
-		if (object instanceof CharSequence && object.toString().isEmpty()) {
+
+		if (isEmptyValue(object)) {
 			return null;
 		}
+
 		return object;
+	}
+
+	public static boolean isEmptyValue(Object object) {
+		// treat empty string as null
+		if (object instanceof CharSequence && object.toString().isEmpty()) {
+			return true;
+		}
+
+		// treat empty list as null
+		if (object instanceof Collection && ((Collection) object).isEmpty()) {
+			return true;
+		}
+
+		return false;
 	}
 
 	public static Object any(Object c1, Object c2, Object... cN) {
@@ -58,11 +78,25 @@ public class ExpressionFormatFunctions {
 		return Stream.concat(Stream.of(c1, c2), Stream.of(cN)).map(ExpressionFormatFunctions::call).filter(Objects::nonNull);
 	}
 
+	/*
+	 * Unix Shell / Windows PowerShell utilities
+	 */
+
 	public static String quote(Object c1, Object... cN) {
-		String q = String.valueOf('"');
-		String r = "\\" + q;
-		return stream(c1, null, cN).map(Objects::toString).map(s -> q + s.replace(q, r) + q).collect(joining(" "));
+		return Platform.isWindows() ? quotePowerShell(c1, cN) : quoteBash(c1, cN);
 	}
+
+	public static String quoteBash(Object c1, Object... cN) {
+		return stream(c1, null, cN).map(Objects::toString).map(s -> "'" + s.replace("'", "'\"'\"'") + "'").collect(joining(" "));
+	}
+
+	public static String quotePowerShell(Object c1, Object... cN) {
+		return stream(c1, null, cN).map(Objects::toString).map(s -> "@'\n" + s + "\n'@").collect(joining(" "));
+	}
+
+	/*
+	 * I/O utilities
+	 */
 
 	public static Map<String, String> csv(Object path) throws IOException {
 		Pattern[] delimiter = { TAB, SEMICOLON };

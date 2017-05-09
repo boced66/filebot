@@ -1,5 +1,6 @@
 package net.filebot.cli;
 
+import static java.util.Arrays.*;
 import static java.util.Collections.*;
 import static net.filebot.Logging.*;
 import static net.filebot.hash.VerificationUtilities.*;
@@ -18,6 +19,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.logging.Level;
+import java.util.regex.Pattern;
 
 import org.kohsuke.args4j.Argument;
 import org.kohsuke.args4j.CmdLineException;
@@ -25,18 +27,23 @@ import org.kohsuke.args4j.CmdLineParser;
 import org.kohsuke.args4j.Option;
 import org.kohsuke.args4j.ParserProperties;
 import org.kohsuke.args4j.spi.ExplicitBooleanOptionHandler;
+import org.kohsuke.args4j.spi.RestOfArgumentsHandler;
 
 import net.filebot.ApplicationFolder;
 import net.filebot.Language;
+import net.filebot.RenameAction;
 import net.filebot.StandardRenameAction;
 import net.filebot.WebServices;
 import net.filebot.format.ExpressionFileFilter;
+import net.filebot.format.ExpressionFileFormat;
 import net.filebot.format.ExpressionFilter;
 import net.filebot.format.ExpressionFormat;
 import net.filebot.hash.HashType;
 import net.filebot.subtitle.SubtitleFormat;
 import net.filebot.subtitle.SubtitleNaming;
+import net.filebot.ui.PanelBuilder;
 import net.filebot.web.Datasource;
+import net.filebot.web.EpisodeListProvider;
 import net.filebot.web.SortOrder;
 
 public class ArgumentBean {
@@ -71,25 +78,25 @@ public class ArgumentBean {
 	@Option(name = "-get-subtitles", usage = "Fetch subtitles")
 	public boolean getSubtitles;
 
-	@Option(name = "--q", usage = "Force lookup query", metaVar = "series/movie title")
+	@Option(name = "--q", usage = "Force lookup query", metaVar = "series / movie query")
 	public String query;
 
-	@Option(name = "--lang", usage = "Language", metaVar = "3-letter language code")
+	@Option(name = "--lang", usage = "Language", metaVar = "language code")
 	public String lang = "en";
 
-	@Option(name = "-check", usage = "Create/Check verification files")
+	@Option(name = "-check", usage = "Create / Check verification files")
 	public boolean check;
 
-	@Option(name = "--output", usage = "Output path", metaVar = "/path")
+	@Option(name = "--output", usage = "Output path", metaVar = "path")
 	public String output;
 
 	@Option(name = "--encoding", usage = "Output character encoding", metaVar = "[UTF-8, Windows-1252]")
 	public String encoding;
 
-	@Option(name = "-list", usage = "Fetch episode list")
+	@Option(name = "-list", usage = "Print episode list")
 	public boolean list = false;
 
-	@Option(name = "-mediainfo", usage = "Get media info")
+	@Option(name = "-mediainfo", usage = "Print media info")
 	public boolean mediaInfo = false;
 
 	@Option(name = "-revert", usage = "Revert files")
@@ -98,13 +105,13 @@ public class ArgumentBean {
 	@Option(name = "-extract", usage = "Extract archives")
 	public boolean extract = false;
 
-	@Option(name = "-script", usage = "Run Groovy script", metaVar = "[fn:name] or [dev:name] or [/path/to/script.groovy]")
+	@Option(name = "-script", usage = "Run Groovy script", metaVar = "[fn:name] or [dev:name] or [foo.groovy]")
 	public String script = null;
 
 	@Option(name = "--log", usage = "Log level", metaVar = "[all, fine, info, warning]")
 	public String log = "all";
 
-	@Option(name = "--log-file", usage = "Log file", metaVar = "/path/to/log.txt")
+	@Option(name = "--log-file", usage = "Log file", metaVar = "log.txt")
 	public String logFile = null;
 
 	@Option(name = "--log-lock", usage = "Lock log file", metaVar = "[yes, no]", handler = ExplicitBooleanOptionHandler.class)
@@ -119,7 +126,7 @@ public class ArgumentBean {
 	@Option(name = "-clear-prefs", usage = "Clear application settings")
 	public boolean clearPrefs = false;
 
-	@Option(name = "-unixfs", usage = "Do not strip invalid characters from file paths")
+	@Option(name = "-unixfs", usage = "Allow special characters in file paths")
 	public boolean unixfs = false;
 
 	@Option(name = "-no-xattr", usage = "Disable extended attributes")
@@ -133,6 +140,9 @@ public class ArgumentBean {
 
 	@Option(name = "--def", usage = "Define script variables", handler = BindingsHandler.class)
 	public Map<String, String> defines = new LinkedHashMap<String, String>();
+
+	@Option(name = "-exec", usage = "Execute command", metaVar = "command", handler = RestOfArgumentsHandler.class)
+	public List<String> exec = new ArrayList<String>();
 
 	@Argument
 	public List<String> arguments = new ArrayList<String>();
@@ -199,7 +209,17 @@ public class ArgumentBean {
 		return files;
 	}
 
-	public StandardRenameAction getRenameAction() {
+	public RenameAction getRenameAction() {
+		// support custom executables (via absolute path)
+		if (action.startsWith("/")) {
+			return new ExecutableRenameAction(action, getOutputPath());
+		}
+
+		// support custom groovy scripts (via closures)
+		if (action.startsWith("{")) {
+			return new GroovyRenameAction(action);
+		}
+
 		return StandardRenameAction.forName(action);
 	}
 
@@ -215,16 +235,24 @@ public class ArgumentBean {
 		return format == null ? null : new ExpressionFormat(format);
 	}
 
+	public ExpressionFileFormat getExpressionFileFormat() throws Exception {
+		return format == null ? null : new ExpressionFileFormat(format);
+	}
+
 	public ExpressionFilter getExpressionFilter() throws Exception {
 		return filter == null ? null : new ExpressionFilter(filter);
 	}
 
-	public FileFilter getExpressionFileFilter() throws Exception {
-		return filter == null ? null : new ExpressionFileFilter(filter);
+	public FileFilter getFileFilter() throws Exception {
+		return filter == null ? FILES : new ExpressionFileFilter(filter);
 	}
 
 	public Datasource getDatasource() {
 		return db == null ? null : WebServices.getService(db);
+	}
+
+	public EpisodeListProvider getEpisodeListProvider() {
+		return db == null ? WebServices.TheTVDB : WebServices.getEpisodeListProvider(db); // default to TheTVDB if --db is not set
 	}
 
 	public String getSearchQuery() {
@@ -281,6 +309,27 @@ public class ArgumentBean {
 
 	public Level getLogLevel() {
 		return Level.parse(log.toUpperCase());
+	}
+
+	public ExecCommand getExecCommand() {
+		try {
+			return exec == null || exec.isEmpty() ? null : ExecCommand.parse(exec, getOutputPath());
+		} catch (Exception e) {
+			throw new CmdlineException("Illegal exec expression: " + exec);
+		}
+	}
+
+	public PanelBuilder[] getPanelBuilders() {
+		// default multi panel mode
+		if (mode == null) {
+			return PanelBuilder.defaultSequence();
+		}
+
+		// only selected panels
+		return optional(mode).map(m -> {
+			Pattern pattern = Pattern.compile(mode, Pattern.CASE_INSENSITIVE);
+			return stream(PanelBuilder.defaultSequence()).filter(p -> pattern.matcher(p.getName()).matches()).toArray(PanelBuilder[]::new);
+		}).orElseThrow(error("Illegal mode", mode));
 	}
 
 	private final String[] args;

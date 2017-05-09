@@ -1,34 +1,23 @@
 package net.filebot.gio;
 
-import static java.util.Arrays.*;
 import static org.junit.Assert.*;
 
 import java.io.File;
 import java.net.URI;
 
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
 import org.junit.Test;
+
+import net.filebot.platform.gnome.GVFS;
+import net.filebot.platform.gnome.PlatformGVFS;
 
 public class PlatformGVFSTest {
 
-	static File gvfsRoot = new File("gvfs");
-	static String[] shares = { "smb-share:server=10.0.1.5,share=data", "afp-volume:host=10.0.1.5,user=reinhard,volume=data", "sftp:host=myserver.org,user=nico" };
-
-	GVFS gvfs = new PlatformGVFS(gvfsRoot);
-
-	@BeforeClass
-	public static void before() throws Exception {
-		stream(shares).forEach(f -> new File(gvfsRoot, f).mkdirs());
-	}
-
-	@AfterClass
-	public static void after() throws Exception {
-	}
+	GVFS gvfs = new PlatformGVFS(new File("gvfs"));
 
 	@Test
 	public void smb() throws Exception {
 		assertEquals("gvfs/smb-share:server=10.0.1.5,share=data/Movies/Avatar.mp4", gvfs.getPathForURI(new URI("smb://10.0.1.5/data/Movies/Avatar.mp4")).getPath());
+		assertEquals("gvfs/smb-share:server=192.168.0.1,share=test/a file with spaces.txt", gvfs.getPathForURI(new URI("smb://192.168.0.1/test/a%20file%20with%20spaces.txt")).getPath());
 	}
 
 	@Test

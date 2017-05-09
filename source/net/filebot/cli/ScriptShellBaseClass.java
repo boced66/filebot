@@ -219,13 +219,10 @@ public abstract class ScriptShellBaseClass extends Script {
 	public String getMediaInfo(File file, String format) throws Exception {
 		ExpressionFormat formatter = new ExpressionFormat(format);
 
-		Object o = xattr.getMetaInfo(file);
-		File f = file.getCanonicalFile();
-
 		try {
-			return formatter.format(new MediaBindingBean(o, f));
+			return formatter.format(new MediaBindingBean(xattr.getMetaInfo(file), file));
 		} catch (SuppressedThrowables e) {
-			debug.finest(format("%s => %s", format, e.getMessage()));
+			debug.finest(format("%s => %s", format, e));
 		}
 
 		return null;
@@ -342,7 +339,7 @@ public abstract class ScriptShellBaseClass extends Script {
 
 		try {
 			if (files.size() > 0) {
-				return getCLI().rename(files, args.getRenameAction(), args.getConflictAction(), args.getAbsoluteOutputFolder(), args.getExpressionFormat(), args.getDatasource(), args.getSearchQuery(), args.getSortOrder(), args.getExpressionFilter(), args.getLanguage().getLocale(), args.isStrict());
+				return getCLI().rename(files, action, args.getConflictAction(), args.getAbsoluteOutputFolder(), args.getExpressionFileFormat(), args.getDatasource(), args.getSearchQuery(), args.getSortOrder(), args.getExpressionFilter(), args.getLanguage().getLocale(), args.isStrict(), args.getExecCommand());
 			}
 
 			if (map.size() > 0) {
@@ -424,7 +421,7 @@ public abstract class ScriptShellBaseClass extends Script {
 		ArgumentBean args = getArgumentBean(parameters);
 
 		try {
-			return getCLI().fetchEpisodeList(args.getDatasource(), args.getSearchQuery(), args.getExpressionFormat(), args.getExpressionFilter(), args.getSortOrder(), args.getLanguage().getLocale(), args.isStrict());
+			return getCLI().fetchEpisodeList(args.getEpisodeListProvider(), args.getSearchQuery(), args.getExpressionFormat(), args.getExpressionFilter(), args.getSortOrder(), args.getLanguage().getLocale(), args.isStrict()).collect(toList());
 		} catch (Exception e) {
 			printException(e);
 		}
@@ -437,7 +434,7 @@ public abstract class ScriptShellBaseClass extends Script {
 		ArgumentBean args = getArgumentBean(parameters);
 
 		try {
-			return getCLI().getMediaInfo(files, args.getExpressionFileFilter(), args.getExpressionFormat());
+			return getCLI().getMediaInfo(files, args.getFileFilter(), args.getExpressionFormat());
 		} catch (Exception e) {
 			printException(e);
 		}
@@ -516,29 +513,12 @@ public abstract class ScriptShellBaseClass extends Script {
 			return StandardRenameAction.forName(obj.toString());
 		}
 
-		if (obj instanceof Closure<?>) {
-			return new RenameAction() {
+		if (obj instanceof File) {
+			return new ExecutableRenameAction(obj.toString(), getArgumentBean().getOutputPath());
+		}
 
-				private final Closure<?> closure = (Closure<?>) obj;
-
-				@Override
-				public File rename(File from, File to) throws Exception {
-					Object value = closure.call(from, to);
-
-					// must return File object, so we try the result of the closure, but if it's not a File we just return the original destination parameter
-					return new File(value.toString());
-				}
-
-				@Override
-				public boolean canRevert() {
-					return false;
-				}
-
-				@Override
-				public String toString() {
-					return "CLOSURE";
-				}
-			};
+		if (obj instanceof Closure) {
+			return new GroovyRenameAction((Closure) obj);
 		}
 
 		// object probably can't be casted

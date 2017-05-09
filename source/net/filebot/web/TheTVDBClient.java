@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 import javax.swing.Icon;
@@ -32,6 +33,8 @@ import net.filebot.ResourceManager;
 
 public class TheTVDBClient extends AbstractEpisodeListProvider implements ArtworkProvider {
 
+	private static final Locale DEFAULT_LOCALE = Locale.ENGLISH;
+
 	private String apikey;
 
 	public TheTVDBClient(String apikey) {
@@ -40,7 +43,7 @@ public class TheTVDBClient extends AbstractEpisodeListProvider implements Artwor
 
 	@Override
 	public String getIdentifier() {
-		return "TheTVDBv2";
+		return "TheTVDB";
 	}
 
 	@Override
@@ -71,19 +74,37 @@ public class TheTVDBClient extends AbstractEpisodeListProvider implements Artwor
 	private Map<String, String> getRequestHeader(Locale locale) {
 		Map<String, String> header = new LinkedHashMap<String, String>(3);
 
-		// TODO support for default language => https://trello.com/c/dyEhtfky/16-handle-multiple-languages-in-the-accept-language-header
-		if (locale != null && locale != Locale.ROOT) {
-			header.put("Accept-Language", Stream.of(locale, Locale.ENGLISH).map(Locale::getLanguage).distinct().collect(joining(", ")));
-		}
+		getLanguageCode(locale).ifPresent(languageCode -> {
+			header.put("Accept-Language", languageCode);
+		});
+
 		header.put("Accept", "application/json");
 		header.put("Authorization", "Bearer " + getAuthorizationToken());
 
 		return header;
 	}
 
+	private Optional<String> getLanguageCode(Locale locale) {
+		// Note: ISO 639 is not a stable standard— some languages' codes have changed.
+		// Locale's constructor recognizes both the new and the old codes for the languages whose codes have changed,
+		// but this function always returns the old code.
+		return Optional.ofNullable(locale).map(Locale::getLanguage).map(code -> {
+			switch (code) {
+			case "iw":
+				return "he"; // Hebrew
+			case "in":
+				return "id"; // Indonesian
+			case "":
+				return null; // empty language code
+			default:
+				return code;
+			}
+		});
+	}
+
 	private String token = null;
 	private Instant tokenExpireInstant = null;
-	private Duration tokenExpireDuration = Duration.ofHours(1);
+	private Duration tokenExpireDuration = Duration.ofHours(23); // token expires after 24 hours
 
 	private String getAuthorizationToken() {
 		synchronized (tokenExpireDuration) {
@@ -125,7 +146,7 @@ public class TheTVDBClient extends AbstractEpisodeListProvider implements Artwor
 
 	@Override
 	public TheTVDBSeriesInfo getSeriesInfo(int id, Locale language) throws Exception {
-		return getSeriesInfo(new SearchResult(id, null), language);
+		return getSeriesInfo(new SearchResult(id), language);
 	}
 
 	@Override
@@ -165,6 +186,11 @@ public class TheTVDBClient extends AbstractEpisodeListProvider implements Artwor
 		SeriesInfo info = getSeriesInfo(series, locale);
 		info.setOrder(sortOrder.name());
 
+		// ignore preferred language if basic series information isn't even available
+		if (info.getName() == null && !locale.equals(DEFAULT_LOCALE)) {
+			return fetchSeriesData(series, sortOrder, DEFAULT_LOCALE);
+		}
+
 		// fetch episode data
 		List<Episode> episodes = new ArrayList<Episode>();
 		List<Episode> specials = new ArrayList<Episode>();
@@ -178,10 +204,20 @@ public class TheTVDBClient extends AbstractEpisodeListProvider implements Artwor
 			}
 
 			streamJsonObjects(json, "data").forEach(it -> {
+				Integer id = getInteger(it, "id");
 				String episodeName = getString(it, "episodeName");
+
+				// default to English episode title if the preferred language is not available
+				if (episodeName == null && !locale.equals(DEFAULT_LOCALE)) {
+					try {
+						episodeName = getEpisodeList(series, sortOrder, DEFAULT_LOCALE).stream().filter(e -> id.equals(e.getId())).findFirst().map(Episode::getTitle).orElse(null);
+					} catch (Exception e) {
+						debug.warning(cause("Failed to retrieve default episode title", e));
+					}
+				}
+
 				Integer absoluteNumber = getInteger(it, "absoluteNumber");
 				SimpleDate airdate = getStringValue(it, "firstAired", SimpleDate::parse);
-				Integer id = getInteger(it, "id");
 
 				// default numbering
 				Integer episodeNumber = getInteger(it, "airedEpisodeNumber");
@@ -230,7 +266,7 @@ public class TheTVDBClient extends AbstractEpisodeListProvider implements Artwor
 			throw new IllegalArgumentException("Illegal TheTVDB ID: " + id);
 		}
 
-		SeriesInfo info = getSeriesInfo(new SearchResult(id, null), locale);
+		SeriesInfo info = getSeriesInfo(new SearchResult(id), locale);
 		return new SearchResult(id, info.getName(), info.getAliasNames());
 	}
 

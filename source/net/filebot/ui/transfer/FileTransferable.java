@@ -17,7 +17,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Scanner;
 
-import net.filebot.gio.GVFS;
+import net.filebot.platform.gnome.GVFS;
 
 public class FileTransferable implements Transferable {
 
@@ -93,6 +93,7 @@ public class FileTransferable implements Transferable {
 		if (useGVFS()) {
 			if (tr.isDataFlavorSupported(FileTransferable.uriListFlavor)) {
 				// file URI list flavor (Linux)
+
 				Readable transferData = (Readable) tr.getTransferData(FileTransferable.uriListFlavor);
 
 				try (Scanner scanner = new Scanner(transferData)) {
@@ -110,12 +111,12 @@ public class FileTransferable implements Transferable {
 							File file = GVFS.getDefaultVFS().getPathForURI(new URI(line));
 
 							if (file == null || !file.exists()) {
-								throw new FileNotFoundException(line);
+								throw new FileNotFoundException(file.getPath());
 							}
 
 							files.add(file);
 						} catch (Throwable e) {
-							debug.warning(e::toString);
+							debug.warning(format("GVFS: %s => %s", line, e));
 						}
 					}
 

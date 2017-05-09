@@ -7,9 +7,9 @@ import static net.filebot.util.FileUtilities.*;
 
 import java.io.File;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Set;
 import java.util.logging.Level;
+import java.util.stream.Stream;
 
 import javax.script.Bindings;
 import javax.script.SimpleBindings;
@@ -53,19 +53,32 @@ public class ArgumentProcessor {
 			throw new CmdlineException("`filebot -get-subtitles -r` has been disabled due to abuse. Please see http://bit.ly/suball for details.");
 		}
 
-		// print episode info
+		// print episode info or rename files in linear order
 		if (args.list) {
-			return print(cli.fetchEpisodeList(args.getDatasource(), args.getSearchQuery(), args.getExpressionFormat(), args.getExpressionFilter(), args.getSortOrder(), args.getLanguage().getLocale(), args.isStrict()));
+			if (args.rename) {
+				// rename files in linear order
+				return cli.rename(args.getEpisodeListProvider(), args.getSearchQuery(), args.getExpressionFileFormat(), args.getExpressionFilter(), args.getSortOrder(), args.getLanguage().getLocale(), args.isStrict(), args.getFiles(true), args.getRenameAction(), args.getConflictAction(), args.getOutputPath(), args.getExecCommand()).isEmpty() ? 1 : 0;
+			} else {
+				// print episode info
+				return print(cli.fetchEpisodeList(args.getEpisodeListProvider(), args.getSearchQuery(), args.getExpressionFormat(), args.getExpressionFilter(), args.getSortOrder(), args.getLanguage().getLocale(), args.isStrict()));
+			}
 		}
 
-		// print media info
+		// print media info or execute commands based on media info
 		if (args.mediaInfo) {
-			return print(cli.getMediaInfo(args.getFiles(true), args.getExpressionFileFilter(), args.getExpressionFormat()));
+			ExecCommand exec = args.getExecCommand();
+			if (exec != null) {
+				// execute command for each file
+				return cli.execute(args.getFiles(true), args.getFileFilter(), exec) ? 0 : 1;
+			} else {
+				// print media info
+				return print(cli.getMediaInfo(args.getFiles(true), args.getFileFilter(), args.getExpressionFormat()));
+			}
 		}
 
 		// revert files
 		if (args.revert) {
-			return cli.revert(args.getFiles(false), args.getExpressionFileFilter(), args.getRenameAction()).isEmpty() ? 1 : 0;
+			return cli.revert(args.getFiles(false), args.getFileFilter(), args.getRenameAction()).isEmpty() ? 1 : 0;
 		}
 
 		// file operations
@@ -80,7 +93,7 @@ public class ArgumentProcessor {
 		}
 
 		if (args.rename) {
-			cli.rename(files, args.getRenameAction(), args.getConflictAction(), args.getAbsoluteOutputFolder(), args.getExpressionFormat(), args.getDatasource(), args.getSearchQuery(), args.getSortOrder(), args.getExpressionFilter(), args.getLanguage().getLocale(), args.isStrict());
+			cli.rename(files, args.getRenameAction(), args.getConflictAction(), args.getAbsoluteOutputFolder(), args.getExpressionFileFormat(), args.getDatasource(), args.getSearchQuery(), args.getSortOrder(), args.getExpressionFilter(), args.getLanguage().getLocale(), args.isStrict(), args.getExecCommand());
 		}
 
 		if (args.check) {
@@ -97,19 +110,11 @@ public class ArgumentProcessor {
 		return 0;
 	}
 
-	private int print(List<?> values) {
-		int lines = 0;
-
-		for (int i = 0; i < values.size(); i++) {
-			try {
-				System.out.println(values.get(i));
-				lines++;
-			} catch (Exception e) {
-				debug.warning(e::getMessage);
-			}
-		}
-
-		return lines == 0 ? 1 : 0;
+	private int print(Stream<?> values) {
+		return values.mapToInt(v -> {
+			System.out.println(v);
+			return 1;
+		}).sum() == 0 ? 1 : 0;
 	}
 
 	public void runScript(CmdlineInterface cli, ArgumentBean args) throws Throwable {

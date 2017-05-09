@@ -8,6 +8,7 @@ import static net.filebot.util.StringUtilities.*;
 import static net.filebot.util.ui.SwingUI.*;
 
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.stream.Stream;
 
@@ -47,6 +48,16 @@ public enum SupportDialog {
 		}
 
 		@Override
+		public boolean feelingLucky(int sessionRenameCount, int totalRenameCount, int currentRevision, int lastSupportRevision, int supportRevisionCount) {
+			// annoy users that chose not to purchase FileBot on the Store
+			if (sessionRenameCount > 0 && Stream.of("Mac OS X", "Windows 10").anyMatch(Predicate.isEqual(System.getProperty("os.name")))) {
+				return true;
+			}
+
+			return super.feelingLucky(sessionRenameCount, totalRenameCount, currentRevision, lastSupportRevision, supportRevisionCount);
+		}
+
+		@Override
 		String getURI() {
 			return getDonateURL();
 		}
@@ -79,6 +90,26 @@ public enum SupportDialog {
 		}
 
 		@Override
+		public boolean feelingLucky(int sessionRenameCount, int totalRenameCount, int currentRevision, int lastSupportRevision, int supportRevisionCount) {
+			// ask for reviews at most once per revision
+			if (currentRevision <= lastSupportRevision) {
+				return false;
+			}
+
+			// ask for reviews only when a significant number of files have been processed
+			if (sessionRenameCount < 5 || totalRenameCount < 5000) {
+				return false;
+			}
+
+			// ask for reviews at most every once in a while
+			if (Math.random() <= 0.777) {
+				return false;
+			}
+
+			return super.feelingLucky(sessionRenameCount, totalRenameCount, currentRevision, lastSupportRevision, supportRevisionCount);
+		}
+
+		@Override
 		String getURI() {
 			return getAppStoreLink();
 		}
@@ -86,18 +117,17 @@ public enum SupportDialog {
 	};
 
 	public boolean feelingLucky(int sessionRenameCount, int totalRenameCount, int currentRevision, int lastSupportRevision, int supportRevisionCount) {
-		// ask for reviews only once per revision
-		if (currentRevision <= lastSupportRevision && isAppStore()) {
-			return false;
-		}
-
-		// always lucky if many files are processed in a single session
-		if (sessionRenameCount >= 5000 * Math.pow(2, supportRevisionCount)) {
+		// lucky if many files are processed in a single session
+		if (sessionRenameCount >= 2000 * Math.pow(2, supportRevisionCount)) {
 			return true;
 		}
 
-		// sometimes lucky if many files have been processed over time
-		return totalRenameCount >= 2000 * Math.pow(4, supportRevisionCount) && Math.random() >= 0.777;
+		// lucky if many many files have been processed over time
+		if (totalRenameCount >= 2000 * Math.pow(5, supportRevisionCount)) {
+			return true;
+		}
+
+		return false;
 	}
 
 	public boolean show(int totalRenameCount, boolean first) {

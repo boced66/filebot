@@ -33,6 +33,7 @@ public final class HistorySpooler {
 
 	private final File persistentHistoryFile = ApplicationFolder.AppData.resolve("history.xml");
 
+	private int sessionHistoryTotalSize = 0;
 	private int persistentHistoryTotalSize = -1;
 	private boolean persistentHistoryEnabled = true;
 
@@ -96,11 +97,17 @@ public final class HistorySpooler {
 		List<Element> sequence = new ArrayList<Element>();
 
 		for (Entry<File, File> element : elements) {
-			sequence.add(new Element(element.getKey().getName(), element.getValue().getPath(), element.getKey().getParentFile()));
+			File k = element.getKey();
+			File v = element.getValue();
+
+			if (k != null && v != null) {
+				sequence.add(new Element(k.getName(), v.getPath(), k.getParentFile()));
+			}
 		}
 
 		if (sequence.size() > 0) {
 			sessionHistory.add(sequence); // append to session history
+			sessionHistoryTotalSize += sequence.size();
 		}
 	}
 
@@ -113,7 +120,7 @@ public final class HistorySpooler {
 	}
 
 	public synchronized int getSessionHistoryTotalSize() {
-		return sessionHistory.totalSize();
+		return sessionHistoryTotalSize;
 	}
 
 	public synchronized int getPersistentHistoryTotalSize() {
